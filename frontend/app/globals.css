@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 5%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 8%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 5%;
+
+    --secondary: 217 19% 18%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 19% 14%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent: 217 19% 18%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217 19% 18%;
+    --input: 217 19% 18%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-muted;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-muted-foreground/30 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/50;
+}
+
+/* Severity colours */
+.severity-critical { @apply text-red-400 bg-red-400/10 border-red-400/20; }
+.severity-high     { @apply text-orange-400 bg-orange-400/10 border-orange-400/20; }
+.severity-medium   { @apply text-yellow-400 bg-yellow-400/10 border-yellow-400/20; }
+.severity-low      { @apply text-blue-400 bg-blue-400/10 border-blue-400/20; }
+.severity-info     { @apply text-slate-400 bg-slate-400/10 border-slate-400/20; }
