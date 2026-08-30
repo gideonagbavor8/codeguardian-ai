@@ -11,6 +11,7 @@ development period.
 | `bob-task-19c9067344aca62ea396379ea77ef7ce-2026-08-30.md` | Task session export | The primary development session — 19 tasks, 141 assistant responses, ~11,000 lines, from initial architecture through to final bug fixes (39.99 BC) |
 | `bob-task-e890c147f952258ea0c0977ee230f5e8-2026-08-30.md` | Task session export | A short secondary session, included so this directory is a complete record (0.024 BC) |
 | `bobalytics-usage.png` | Bobalytics screenshot | Aggregate IBM Bob usage for this project's development window |
+| `bob-agent-mode.png` | IDE screenshot | IBM Bob running in the project workspace with **Agent** mode selected, alongside the task list |
 
 **These two task exports are the complete IBM Bob task history for this project.**
 Their costs sum to 39.99 + 0.024 = **40.01 BC**, matching the Bobcoin spend shown
@@ -20,7 +21,7 @@ full record rather than a selected subset.
 ## Bob 2.0 mode
 
 All development was carried out in IBM Bob 2.0's **Agent mode** (the alternatives
-being Plan and Ask). Agent mode is why the task export reads as executed work
+being Plan and Ask), as shown in `bob-agent-mode.png`. Agent mode is why the task export reads as executed work
 rather than advice — Bob created and edited files directly, ran commands to check
 its own output, and iterated when something failed.
 
