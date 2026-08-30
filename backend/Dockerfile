@@ -15,4 +15,6 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Apply migrations before serving. Render may override this with its own
+# start command, so the app also bootstraps its schema at startup.
+CMD ["sh", "-c", "alembic upgrade head || echo 'alembic failed — falling back to startup schema bootstrap'; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

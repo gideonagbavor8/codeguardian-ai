@@ -20,12 +20,16 @@ from sqlalchemy.pool import NullPool
 # Import all models so Alembic can detect them via Base.metadata
 from app.models import Base  # noqa: F401 — registers all ORM classes
 from app.config import settings
+from app.database import normalise_db_url
 
 # Alembic Config object
 config = context.config
 
-# Override sqlalchemy.url with the value from settings (reads .env)
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Override sqlalchemy.url with the value from settings (reads .env).
+# Managed-Postgres URLs carry libpq-only parameters such as ?sslmode=require
+# that asyncpg rejects, so normalise them the same way the app engine does.
+_DB_URL, _CONNECT_ARGS = normalise_db_url(settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", _DB_URL)
 
 # Logging
 if config.config_file_name is not None:
@@ -63,6 +67,7 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=NullPool,
+        connect_args=_CONNECT_ARGS,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
