@@ -23,12 +23,18 @@ from app.database import AsyncSessionLocal
 from app.dependencies import CurrentUser, DBDep
 from app.models.scan import Scan, ScanStatus, SourceType
 from app.schemas.scan import (
+    GithubScanRequest,
     ScanCreatedResponse,
     ScanListResponse,
     ScanResponse,
     ScanStatusResponse,
     SnippetScanRequest,
     ScanDetailResponse,
+)
+from app.services.scanner.repo_fetcher import (
+    RepoFetchError,
+    validate_branch,
+    validate_github_url,
 )
 from app.tasks.scan_pipeline import run_scan_pipeline
 
@@ -68,6 +74,56 @@ async def create_snippet_scan(
         language=body.language,
         source_meta={
             "code": body.code,
+            "language": body.language,
+        },
+    )
+    db.add(scan)
+    await db.flush()
+    scan_id = scan.id
+    await db.commit()
+
+    asyncio.create_task(_fire_pipeline(scan_id))
+
+    return ScanCreatedResponse(
+        scan_id=scan_id,
+        status=ScanStatus.PENDING.value,
+        poll_url=_poll_url(scan_id),
+    )
+
+
+@router.post(
+    "/github",
+    response_model=ScanCreatedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Scan a public GitHub repository",
+)
+async def create_github_scan(
+    body: GithubScanRequest,
+    current_user: CurrentUser,
+    db: DBDep,
+) -> ScanCreatedResponse:
+    # Validate up front so a bad URL is a clean 400 rather than a background
+    # scan that fails minutes later.
+    try:
+        owner, repo = validate_github_url(body.github_url)
+        branch = validate_branch(body.branch or "main")
+    except RepoFetchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    # Store the normalised URL, never the raw user input.
+    repo_url = f"https://github.com/{owner}/{repo}"
+
+    scan = Scan(
+        user_id=current_user.id,
+        name=body.project_name or f"{owner}/{repo}",
+        status=ScanStatus.PENDING.value,
+        source_type=SourceType.GITHUB.value,
+        language=body.language,
+        source_meta={
+            "repo_url": repo_url,
+            "branch": branch,
             "language": body.language,
         },
     )

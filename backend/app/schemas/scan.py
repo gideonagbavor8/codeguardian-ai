@@ -22,6 +22,15 @@ class SnippetScanRequest(BaseModel):
     name: str | None = Field(default=None, max_length=255)
 
 
+class GithubScanRequest(BaseModel):
+    """Scan a public GitHub repository. Field names match the frontend body."""
+    github_url: str = Field(min_length=1, max_length=500,
+                            description="Public GitHub repository URL")
+    branch: str = Field(default="main", max_length=255)
+    project_name: str | None = Field(default=None, max_length=255)
+    language: str = Field(default="python", max_length=50)
+
+
 class UploadScanMeta(BaseModel):
     """Optional metadata submitted alongside a file upload."""
     name: str | None = Field(default=None, max_length=255)

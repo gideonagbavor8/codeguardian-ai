@@ -116,8 +116,13 @@ export const scanApi = {
   }>("/scans/upload", fd, token);
 },
 
+  // Backend returns ScanCreatedResponse (202), same shape as uploadFile
   scanGithub(token: string, githubUrl: string, branch: string, projectName: string) {
-    return apiFetch<Scan>("/scans/github", {
+    return apiFetch<{
+      scan_id: string;
+      status: string;
+      poll_url: string;
+    }>("/scans/github", {
       method: "POST",
       token,
       body: JSON.stringify({ github_url: githubUrl, branch, project_name: projectName }),

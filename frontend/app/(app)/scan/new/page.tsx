@@ -53,7 +53,7 @@ export default function NewScanPage() {
     try {
       const scan = await scanApi.scanGithub(token, ghUrl, ghBranch, ghProject || ghUrl);
       toast({ title: "Scan started", description: `Cloning and scanning ${ghUrl}…` });
-      router.push(`/scan/${scan.id}`);
+      router.push(`/scan/${scan.scan_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "GitHub scan failed");
     } finally {

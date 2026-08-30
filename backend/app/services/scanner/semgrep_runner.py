@@ -13,6 +13,7 @@ import shutil
 import tempfile
 from typing import List
 
+from app.services.scanner.bandit_runner import _display_path
 from app.services.scanner.base import (
     RawSecurityFinding,
     normalise_severity,
@@ -39,23 +40,38 @@ def semgrep_available() -> bool:
     return shutil.which("semgrep") is not None
 
 
-async def run_semgrep(code: str, language: str = "python") -> List[RawSecurityFinding]:
+async def run_semgrep(
+    code: str,
+    language: str = "python",
+    target_path: str | None = None,
+) -> List[RawSecurityFinding]:
     """
-    Run Semgrep with the auto ruleset against *code*.
+    Run Semgrep with the auto ruleset.
     Returns [] gracefully when semgrep is not installed or any error occurs.
+
+    When *target_path* is given, Semgrep scans that directory recursively and
+    *code* is ignored; reported paths are relative to the directory.
     """
     if not semgrep_available():
         logger.debug("semgrep not found on PATH — skipping")
         return []
 
-    suffix = _EXT_MAP.get(language.lower(), ".txt")
-    findings: List[RawSecurityFinding] = []
+    scan_root: str | None = None
+    tmp_path: str | None = None
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=suffix, delete=False, encoding="utf-8"
-    ) as tmp:
-        tmp.write(code)
-        tmp_path = tmp.name
+    if target_path is not None:
+        scan_root = target_path
+        scan_target = target_path
+    else:
+        suffix = _EXT_MAP.get(language.lower(), ".txt")
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=suffix, delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(code)
+            tmp_path = tmp.name
+        scan_target = tmp_path
+
+    findings: List[RawSecurityFinding] = []
 
     argv = [
         "semgrep",
@@ -63,7 +79,7 @@ async def run_semgrep(code: str, language: str = "python") -> List[RawSecurityFi
         "--json",
         "--quiet",
         "--no-git-ignore",
-        tmp_path,
+        scan_target,
     ]
 
     try:
@@ -114,7 +130,7 @@ async def run_semgrep(code: str, language: str = "python") -> List[RawSecurityFi
                     rule_id=result.get("check_id"),
                     severity=severity,
                     confidence=None,
-                    file_path=os.path.basename(result.get("path", "")),
+                    file_path=_display_path(result.get("path", ""), scan_root),
                     line_number=result.get("start", {}).get("line"),
                     code_snippet=extra.get("lines"),
                     message=extra.get("message", ""),
@@ -132,10 +148,11 @@ async def run_semgrep(code: str, language: str = "python") -> List[RawSecurityFi
     except Exception as exc:
         logger.error("semgrep failed: %s", exc, exc_info=True)
     finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     return findings
 

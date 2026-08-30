@@ -21,6 +21,7 @@ from app.services.ai.watsonx_client import generate_analysis
 from app.services.report_builder import build_report
 from app.services.scanner.bandit_runner import run_bandit
 from app.services.scanner.dep_auditor import audit_dependencies
+from app.services.scanner.repo_fetcher import cleanup_repo, fetch_repo, read_dependency_file
 from app.services.scanner.semgrep_runner import run_semgrep
 from app.services.scanner.base import RawDependencyFinding, RawSecurityFinding
 
@@ -45,19 +46,42 @@ async def run_scan_pipeline(scan_id: uuid.UUID, db: AsyncSession) -> None:
     await db.commit()
     logger.info("Scan %s: RUNNING", scan_id)
 
+    repo_temp_dir: str | None = None
+
     try:
         meta: dict = scan.source_meta or {}
         code: str = meta.get("code", "")
         language: str = scan.language or "python"
+        dep_file: str = meta.get("dep_file_content", "")
+        dep_ecosystem: str = meta.get("dep_ecosystem", "pip")
+
+        # ── 2b. GitHub source: materialise the repo on disk ───
+        # Scanners then run against the real tree instead of a code string.
+        # repo_temp_dir is removed in the finally block below, on every path.
+        scan_root: str | None = None
+        if scan.source_type == SourceType.GITHUB.value:
+            fetched = await fetch_repo(
+                meta.get("repo_url", ""), meta.get("branch") or "main"
+            )
+            repo_temp_dir = fetched.temp_dir
+            scan_root = fetched.root
+            dep_file, dep_ecosystem = read_dependency_file(scan_root)
+            logger.info(
+                "Scan %s: fetched %s@%s", scan_id, fetched.normalised_url, fetched.ref
+            )
 
         # ── 3. Bandit scan (Python only) ──────────────────────
-        bandit_findings: list[RawSecurityFinding] = await run_bandit(code, language)
+        bandit_findings: list[RawSecurityFinding] = await run_bandit(
+            code, language, target_path=scan_root
+        )
         logger.info(
             "Scan %s: bandit → %d finding(s)", scan_id, len(bandit_findings)
         )
 
         # ── 4. Semgrep scan (multi-language, optional) ────────
-        semgrep_findings: list[RawSecurityFinding] = await run_semgrep(code, language)
+        semgrep_findings: list[RawSecurityFinding] = await run_semgrep(
+            code, language, target_path=scan_root
+        )
         logger.info(
             "Scan %s: semgrep → %d finding(s)", scan_id, len(semgrep_findings)
         )
@@ -66,8 +90,6 @@ async def run_scan_pipeline(scan_id: uuid.UUID, db: AsyncSession) -> None:
         raw_sec: list[RawSecurityFinding] = bandit_findings + semgrep_findings
 
         # ── 5. Dependency audit ───────────────────────────────
-        dep_file: str = meta.get("dep_file_content", "")
-        dep_ecosystem: str = meta.get("dep_ecosystem", "pip")
         raw_dep: list[RawDependencyFinding] = []
         if dep_file.strip():
             raw_dep = await audit_dependencies(dep_file, dep_ecosystem)
@@ -144,3 +166,7 @@ async def run_scan_pipeline(scan_id: uuid.UUID, db: AsyncSession) -> None:
             await db.commit()
         except Exception:
             await db.rollback()
+
+    finally:
+        # Always remove a cloned repository — success, failure or cancellation.
+        cleanup_repo(repo_temp_dir)

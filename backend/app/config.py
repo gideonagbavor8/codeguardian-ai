@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     WATSONX_URL: str = "https://us-south.ml.cloud.ibm.com"
     WATSONX_MODEL_ID: str = "ibm/granite-13b-instruct-v2"
 
+    # ── GitHub repository scanning ────────────────────────────
+    MAX_REPO_SIZE_MB: int = 50          # cap on the downloaded archive
+    MAX_REPO_FILES: int = 20000         # cap on extracted entries
+    REPO_FETCH_TIMEOUT_SECONDS: int = 120
+
     # ── App ───────────────────────────────────────────────────
     ENVIRONMENT: str = "development"
     ALLOWED_ORIGINS: str = "http://localhost:3000"

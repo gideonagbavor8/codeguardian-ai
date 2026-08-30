@@ -23,6 +23,9 @@ pip-audit==2.7.3
 # ── IBM watsonx.ai ────────────────────────────────────────────
 ibm-watsonx-ai==1.7.1
 
+# ── GitHub repository fetching ───────────────────────────────
+httpx==0.27.2
+
 # ── Utilities ────────────────────────────────────────────────
 aiofiles==24.1.0
 python-dotenv==1.0.1
