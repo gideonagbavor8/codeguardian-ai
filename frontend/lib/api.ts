@@ -7,7 +7,7 @@ import type {
   DashboardStats,
 } from "./types";
 
-const BASE = process.env.API_URL ?? "https://codeguardian-ai-backend.onrender.com";
+const BASE = "https://codeguardian-ai-backend.onrender.com";
 
 // ─── Low-level fetch wrapper ──────────────────────────────────────────────────
 
@@ -75,21 +75,21 @@ async function apiUpload<T>(
 
 export const authApi = {
   register(email: string, password: string, fullName: string) {
-    return apiFetch<User>("/auth/register", {
+    return apiFetch<User>("/api/v1/auth/register", {
       method: "POST",
       body: JSON.stringify({ email, password, full_name: fullName }),
     });
   },
 
   login(email: string, password: string) {
-  return apiFetch<AuthTokens>("/auth/login", {
+  return apiFetch<AuthTokens>("/api/v1/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
 },
 
   me(token: string) {
-    return apiFetch<User>("/auth/me", { token });
+    return apiFetch<User>("/api/v1/auth/me", { token });
   },
 };
 
@@ -98,11 +98,11 @@ export const authApi = {
 export const scanApi = {
   list(token: string) {
     // Backend returns ScanListResponse: { items, total, page, limit }
-    return apiFetch<{ items: Scan[]; total: number; page: number; limit: number }>("/scans", { token });
+    return apiFetch<{ items: Scan[]; total: number; page: number; limit: number }>("/api/v1/scans", { token });
   },
 
   get(token: string, scanId: string) {
-    return apiFetch<ScanDetail>(`/scans/${scanId}`, { token });
+    return apiFetch<ScanDetail>(`/api/v1/scans/${scanId}`, { token });
   },
 
   uploadFile(token: string, file: File, projectName: string) {
@@ -113,7 +113,7 @@ export const scanApi = {
     scan_id: string;
     status: string;
     poll_url: string;
-  }>("/scans/upload", fd, token);
+  }>("/api/v1/scans/upload", fd, token);
 },
 
   // Backend returns ScanCreatedResponse (202), same shape as uploadFile
@@ -122,7 +122,7 @@ export const scanApi = {
       scan_id: string;
       status: string;
       poll_url: string;
-    }>("/scans/github", {
+    }>("/api/v1/scans/github", {
       method: "POST",
       token,
       body: JSON.stringify({ github_url: githubUrl, branch, project_name: projectName }),
@@ -130,7 +130,7 @@ export const scanApi = {
   },
 
   delete(token: string, scanId: string) {
-    return apiFetch<void>(`/scans/${scanId}`, { method: "DELETE", token });
+    return apiFetch<void>(`/api/v1/scans/${scanId}`, { method: "DELETE", token });
   },
 };
 
@@ -141,12 +141,12 @@ export const scanApi = {
 export const reportApi = {
   // Fetch report by the scan's UUID (backend key)
   getByScanId(token: string, scanId: string) {
-    return apiFetch<Report>(`/reports/${scanId}`, { token });
+    return apiFetch<Report>(`/api/v1/reports/${scanId}`, { token });
   },
 
   // Convenience alias kept for call sites that already have the scan_id
   get(token: string, scanId: string) {
-    return apiFetch<Report>(`/reports/${scanId}`, { token });
+    return apiFetch<Report>(`/api/v1/reports/${scanId}`, { token });
   },
 };
 
@@ -154,6 +154,6 @@ export const reportApi = {
 
 export const dashboardApi = {
   stats(token: string) {
-    return apiFetch<DashboardStats>("/dashboard/stats", { token });
+    return apiFetch<DashboardStats>("/api/v1/dashboard/stats", { token });
   },
 };
