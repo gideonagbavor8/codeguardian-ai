@@ -8,8 +8,14 @@ development period.
 
 | File | Type | What it documents |
 | --- | --- | --- |
-| `bob-task-19c9067344aca62ea396379ea77ef7ce-2026-08-30.md` | Task session export | The primary development session — 19 tasks, 141 assistant responses, ~11,000 lines, from initial architecture through to final bug fixes |
+| `bob-task-19c9067344aca62ea396379ea77ef7ce-2026-08-30.md` | Task session export | The primary development session — 19 tasks, 141 assistant responses, ~11,000 lines, from initial architecture through to final bug fixes (39.99 BC) |
+| `bob-task-e890c147f952258ea0c0977ee230f5e8-2026-08-30.md` | Task session export | A short secondary session, included so this directory is a complete record (0.024 BC) |
 | `bobalytics-usage.png` | Bobalytics screenshot | Aggregate IBM Bob usage for this project's development window |
+
+**These two task exports are the complete IBM Bob task history for this project.**
+Their costs sum to 39.99 + 0.024 = **40.01 BC**, matching the Bobcoin spend shown
+on the Bobalytics dashboard screenshot — so this directory can be verified as a
+full record rather than a selected subset.
 
 ## Primary session — task `19c9067344aca62ea396379ea77ef7ce`
 
