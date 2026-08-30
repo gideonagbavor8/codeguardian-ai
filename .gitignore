@@ -24,6 +24,7 @@ htmlcov/
 node_modules/
 .next/
 out/
+*.tsbuildinfo
 
 # IDE
 .vscode/
