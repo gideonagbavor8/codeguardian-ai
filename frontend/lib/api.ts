@@ -7,7 +7,7 @@ import type {
   DashboardStats,
 } from "./types";
 
-const BASE = process.env.API_URL ?? "http://localhost:8000";
+const BASE = process.env.API_URL ?? "https://codeguardian-ai-backend.onrender.com";
 
 // ─── Low-level fetch wrapper ──────────────────────────────────────────────────
 
