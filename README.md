@@ -84,7 +84,22 @@ The integration is built to fail safe. Credentials are read only from environmen
 
 ### IBM Bob 2.0
 
-IBM Bob 2.0 was used as the core development platform for building CodeGuardian AI — architecture and implementation planning, scaffolding the FastAPI backend and Next.js frontend, and iterating on the scan pipeline, the watsonx.ai integration layer, and the deployment configuration.
+IBM Bob 2.0 was the core development platform for CodeGuardian AI, driving every stage of the build:
+
+| Stage | How IBM Bob was used |
+| --- | --- |
+| **Architecture** | Read `PROJECT_BRIEF.md` and produced the complete MVP architecture — system design, user flow, database schema, API surface and scope |
+| **Scaffolding** | Generated the full repository structure from `ARCHITECTURE.md` |
+| **Backend** | Implemented the FastAPI application, models, schemas and routers against `ARCHITECTURE.md` and `PROJECT_STRUCTURE.md` |
+| **Scan pipeline** | Built the Bandit / Semgrep / dependency-audit pipeline and the finding normalisation layer |
+| **Frontend** | Built the Next.js dashboard, scan and report pages |
+| **Debugging** | Fixed the Alembic migration error, the scan-detail endpoint 500, the status-polling bug, the report page, and a scanner pipeline bug found during verification |
+| **AI integration** | Diagnosed and hardened the watsonx.ai layer, including its fallback behaviour |
+
+The exported task session records are in
+[`docs/bob-session-summaries/`](docs/bob-session-summaries/) — a session covering
+19 tasks and 141 assistant responses, alongside the Bobalytics usage dashboard
+for the development period.
 
 ---
 
