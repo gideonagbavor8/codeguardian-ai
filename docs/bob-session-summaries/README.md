@@ -17,6 +17,13 @@ Their costs sum to 39.99 + 0.024 = **40.01 BC**, matching the Bobcoin spend show
 on the Bobalytics dashboard screenshot — so this directory can be verified as a
 full record rather than a selected subset.
 
+## Bob 2.0 mode
+
+All development was carried out in IBM Bob 2.0's **Agent mode** (the alternatives
+being Plan and Ask). Agent mode is why the task export reads as executed work
+rather than advice — Bob created and edited files directly, ran commands to check
+its own output, and iterated when something failed.
+
 ## Primary session — task `19c9067344aca62ea396379ea77ef7ce`
 
 Exported 2026-08-30, covering development from 2026-08-28. The session shows

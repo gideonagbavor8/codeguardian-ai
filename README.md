@@ -84,7 +84,9 @@ The integration is built to fail safe. Credentials are read only from environmen
 
 ### IBM Bob 2.0
 
-IBM Bob 2.0 was the core development platform for CodeGuardian AI, driving every stage of the build:
+IBM Bob 2.0 was the core development platform for CodeGuardian AI, driving every stage of the build.
+
+Of Bob 2.0's three modes — **Agent**, **Plan** and **Ask** — the project was built in **Agent mode**, so Bob worked autonomously across the codebase: reading the source-of-truth documents, creating and editing files directly, running commands to verify its work, and iterating on failures rather than only returning suggestions. Each stage below is a task Bob executed end to end in that mode:
 
 | Stage | How IBM Bob was used |
 | --- | --- |
