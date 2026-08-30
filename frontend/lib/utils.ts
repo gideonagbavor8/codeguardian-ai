@@ -50,6 +50,7 @@ export function riskLevelColor(risk: RiskLevel | string): string {
     case "high":     return "text-orange-400";
     case "medium":   return "text-yellow-400";
     case "low":      return "text-emerald-400";
+    case "safe":     return "text-emerald-400";
     default:         return "text-slate-400";
   }
 }

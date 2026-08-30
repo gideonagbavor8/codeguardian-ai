@@ -8,7 +8,7 @@ interface ScoreGaugeProps {
 }
 
 export function ScoreGauge({ report }: ScoreGaugeProps) {
-  const score = Math.round(report.overall_score);
+  const score = Math.round(report.release_readiness_score);
   const circumference = 2 * Math.PI * 54; // r=54
   const offset = circumference - (score / 100) * circumference;
 

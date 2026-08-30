@@ -10,15 +10,24 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { formatDate, severityColor } from "@/lib/utils";
+import { formatDate, severityColor, scoreColor, riskLevelColor } from "@/lib/utils";
 import type { ScanStatus } from "@/lib/types";
 
+// Backend uses uppercase status values
 const StatusIcon = ({ status }: { status: ScanStatus }) => {
   switch (status) {
-    case "completed": return <CheckCircle className="h-5 w-5 text-emerald-400" />;
-    case "failed":    return <XCircle className="h-5 w-5 text-red-400" />;
-    case "running":   return <Loader2 className="h-5 w-5 text-primary animate-spin" />;
-    default:          return <Clock className="h-5 w-5 text-muted-foreground" />;
+    case "COMPLETE": return <CheckCircle className="h-5 w-5 text-emerald-400" />;
+    case "FAILED":   return <XCircle className="h-5 w-5 text-red-400" />;
+    case "RUNNING":  return <Loader2 className="h-5 w-5 text-primary animate-spin" />;
+    default:         return <Clock className="h-5 w-5 text-muted-foreground" />;
+  }
+};
+
+const statusBadgeVariant = (status: ScanStatus) => {
+  switch (status) {
+    case "COMPLETE": return "default" as const;
+    case "FAILED":   return "destructive" as const;
+    default:         return "secondary" as const;
   }
 };
 
@@ -46,7 +55,9 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
     );
   }
 
-  const isRunning = scan.status === "pending" || scan.status === "running";
+  const isRunning = scan.status === "PENDING" || scan.status === "RUNNING";
+  const isComplete = scan.status === "COMPLETE";
+  const isFailed = scan.status === "FAILED";
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -56,24 +67,26 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
           <Link href="/dashboard" className="text-xs text-muted-foreground hover:text-foreground">
             ← Dashboard
           </Link>
-          <h2 className="text-xl font-semibold mt-1">{scan.project_name}</h2>
-          <p className="text-xs text-muted-foreground">{formatDate(scan.created_at)}</p>
+          {/* API returns `name`, not `project_name` */}
+          <h2 className="text-xl font-semibold mt-1">{scan.name ?? "Unnamed scan"}</h2>
+          <p className="text-xs text-muted-foreground">
+            {formatDate(scan.created_at)}
+            {scan.language && (
+              <span className="ml-2 uppercase text-muted-foreground/60">{scan.language}</span>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <StatusIcon status={scan.status} />
-            <Badge
-              variant={
-                scan.status === "completed" ? "default" :
-                scan.status === "failed"    ? "destructive" : "secondary"
-              }
-            >
+            <Badge variant={statusBadgeVariant(scan.status)}>
               {scan.status}
             </Badge>
           </div>
-          {scan.status === "completed" && scan.report && (
+          {isComplete && scan.report && (
             <Button asChild size="sm">
-              <Link href={`/reports/${scan.report.id}`}>
+              {/* Backend route is keyed on scan_id, not report.id */}
+              <Link href={`/reports/${scan.id}`}>
                 <FileText className="h-4 w-4 mr-1" /> View Report
               </Link>
             </Button>
@@ -81,13 +94,62 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
+      {/* Report summary card — shown when complete */}
+      {isComplete && scan.report && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Report Summary</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Score</p>
+                {/* API: release_readiness_score */}
+                <p className={`text-2xl font-bold ${scoreColor(scan.report.release_readiness_score)}`}>
+                  {scan.report.release_readiness_score}
+                  <span className="text-sm font-normal text-muted-foreground">/100</span>
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Risk level</p>
+                {/* API: risk_level is uppercase e.g. "SAFE", "HIGH" */}
+                <p className={`text-sm font-semibold ${riskLevelColor(scan.report.risk_level)}`}>
+                  {scan.report.risk_level}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Security issues</p>
+                {/* API: total_security_issues */}
+                <p className="text-2xl font-bold">{scan.report.total_security_issues}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Dep. issues</p>
+                {/* API: total_dep_issues */}
+                <p className="text-2xl font-bold">{scan.report.total_dep_issues}</p>
+              </div>
+            </div>
+
+            {scan.report.ai_summary && (
+              <div className="mt-4 pt-4 border-t border-border">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                  AI Summary
+                </p>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {scan.report.ai_summary}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Running state */}
       {isRunning && (
         <Card>
           <CardContent className="py-10 flex flex-col items-center gap-3">
             <Loader2 className="h-8 w-8 text-primary animate-spin" />
             <p className="text-sm text-muted-foreground">
-              {scan.status === "pending" ? "Queued — starting soon…" : "Running security scan…"}
+              {scan.status === "PENDING" ? "Queued — starting soon…" : "Running security scan…"}
             </p>
             <p className="text-xs text-muted-foreground">This usually takes 15–60 seconds</p>
           </CardContent>
@@ -95,7 +157,7 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
       )}
 
       {/* Error */}
-      {scan.status === "failed" && scan.error_message && (
+      {isFailed && scan.error_message && (
         <Card>
           <CardContent className="py-6">
             <p className="text-sm text-destructive font-medium">Scan failed</p>
@@ -105,7 +167,7 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
       )}
 
       {/* Security findings */}
-      {scan.security_findings.length > 0 && (
+      {(scan.security_findings?.length ?? 0) > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
@@ -117,7 +179,7 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Severity</TableHead>
-                  <TableHead>Title</TableHead>
+                  <TableHead>Message</TableHead>
                   <TableHead>File</TableHead>
                   <TableHead>Tool</TableHead>
                 </TableRow>
@@ -131,15 +193,14 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <div className="font-medium text-sm">{f.title}</div>
-                      {f.description && (
-                        <div className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                          {f.description}
-                        </div>
+                      {/* API returns `message`, not `title`/`description` */}
+                      <div className="text-sm">{f.message}</div>
+                      {f.cwe_id && (
+                        <div className="text-xs text-muted-foreground mt-0.5">{f.cwe_id}</div>
                       )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground font-mono">
-                      {f.file_path}
+                      {f.file_path ?? "—"}
                       {f.line_number ? `:${f.line_number}` : ""}
                     </TableCell>
                     <TableCell className="text-xs uppercase text-muted-foreground">{f.tool}</TableCell>
@@ -152,7 +213,7 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
       )}
 
       {/* Dependency findings */}
-      {scan.dependency_findings.length > 0 && (
+      {(scan.dependency_findings?.length ?? 0) > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
@@ -166,7 +227,7 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
                   <TableHead>Package</TableHead>
                   <TableHead>Version</TableHead>
                   <TableHead>Severity</TableHead>
-                  <TableHead>CVE / ID</TableHead>
+                  <TableHead>CVEs</TableHead>
                   <TableHead>Fix</TableHead>
                 </TableRow>
               </TableHeader>
@@ -175,16 +236,20 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
                   <TableRow key={d.id}>
                     <TableCell className="font-medium text-sm">{d.package_name}</TableCell>
                     <TableCell className="text-xs font-mono text-muted-foreground">
-                      {d.installed_version}
+                      {d.installed_version ?? "—"}
                     </TableCell>
                     <TableCell>
                       <span className={`text-xs font-semibold uppercase ${severityColor(d.severity)}`}>
                         {d.severity}
                       </span>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{d.vulnerability_id}</TableCell>
+                    {/* API: cve_ids is string[], not a single vulnerability_id */}
+                    <TableCell className="text-xs text-muted-foreground">
+                      {d.cve_ids?.join(", ") ?? "—"}
+                    </TableCell>
+                    {/* API: fixed_version, not fix_version */}
                     <TableCell className="text-xs text-emerald-400 font-mono">
-                      {d.fix_version ?? "—"}
+                      {d.fixed_version ?? "—"}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -195,9 +260,9 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
       )}
 
       {/* Completed but no findings */}
-      {scan.status === "completed" &&
-        scan.security_findings.length === 0 &&
-        scan.dependency_findings.length === 0 && (
+      {isComplete &&
+        (scan.security_findings?.length ?? 0) === 0 &&
+        (scan.dependency_findings?.length ?? 0) === 0 && (
           <Card>
             <CardContent className="py-10 text-center">
               <CheckCircle className="h-8 w-8 text-emerald-400 mx-auto mb-3" />

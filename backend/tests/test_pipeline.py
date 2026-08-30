@@ -7,7 +7,9 @@ pip-audit binaries are required for these tests.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import sys
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -211,6 +213,94 @@ async def test_bandit_returns_empty_on_json_error():
         findings = await run_bandit("x = 1", "python")
 
     assert findings == []
+
+
+# ─────────────────────────────────────────────────────────────
+# 2b. Subprocess fallback for event loops without asyncio subprocess
+#     support.  Windows SelectorEventLoop -- which uvicorn installs for
+#     --reload / --workers>1 -- raises NotImplementedError from
+#     asyncio.create_subprocess_exec(), silently zeroing every scan.
+# ─────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_run_subprocess_in_thread_captures_output():
+    from app.services.scanner.base import run_subprocess_in_thread
+
+    stdout, _stderr = await run_subprocess_in_thread(
+        [sys.executable, "-c", "print('hello-from-thread')"], timeout=30
+    )
+    assert b"hello-from-thread" in stdout
+
+
+@pytest.mark.asyncio
+async def test_run_subprocess_in_thread_raises_asyncio_timeout():
+    from app.services.scanner.base import run_subprocess_in_thread
+
+    with pytest.raises(asyncio.TimeoutError):
+        await run_subprocess_in_thread(
+            [sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.2
+        )
+
+
+@pytest.mark.asyncio
+async def test_bandit_falls_back_when_asyncio_subprocess_unsupported():
+    """NotImplementedError from the event loop must not lose Bandit findings."""
+    from app.services.scanner.bandit_runner import run_bandit
+
+    with patch(
+        "app.services.scanner.bandit_runner.asyncio.create_subprocess_exec",
+        side_effect=NotImplementedError,
+    ):
+        with patch(
+            "app.services.scanner.bandit_runner.run_subprocess_in_thread",
+            new_callable=AsyncMock,
+            return_value=(BANDIT_HIGH_JSON.encode(), b""),
+        ) as mock_thread:
+            findings = await run_bandit("import pickle", "python")
+
+    mock_thread.assert_awaited_once()
+    assert len(findings) == 1
+    assert findings[0].rule_id == "B301"
+    assert findings[0].severity == "HIGH"
+
+
+@pytest.mark.asyncio
+async def test_semgrep_falls_back_when_asyncio_subprocess_unsupported():
+    from app.services.scanner.semgrep_runner import run_semgrep
+
+    with patch("app.services.scanner.semgrep_runner.semgrep_available", return_value=True):
+        with patch(
+            "app.services.scanner.semgrep_runner.asyncio.create_subprocess_exec",
+            side_effect=NotImplementedError,
+        ):
+            with patch(
+                "app.services.scanner.semgrep_runner.run_subprocess_in_thread",
+                new_callable=AsyncMock,
+                return_value=(SEMGREP_WARNING_JSON.encode(), b""),
+            ):
+                findings = await run_semgrep("eval(user_input)", "python")
+
+    assert len(findings) == 1
+    assert findings[0].tool == "semgrep"
+
+
+@pytest.mark.asyncio
+async def test_pip_audit_falls_back_when_asyncio_subprocess_unsupported():
+    from app.services.scanner.dep_auditor import audit_dependencies
+
+    with patch(
+        "app.services.scanner.dep_auditor.asyncio.create_subprocess_exec",
+        side_effect=NotImplementedError,
+    ):
+        with patch(
+            "app.services.scanner.dep_auditor.run_subprocess_in_thread",
+            new_callable=AsyncMock,
+            return_value=(PIPAUDIT_JSON.encode(), b""),
+        ):
+            findings = await audit_dependencies("requests==2.25.0", "pip")
+
+    assert len(findings) == 1
+    assert findings[0].package_name == "requests"
 
 
 # ─────────────────────────────────────────────────────────────

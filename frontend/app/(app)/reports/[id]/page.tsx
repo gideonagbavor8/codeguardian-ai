@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ScoreGauge } from "@/components/report/ScoreGauge";
 import { AISummaryCard } from "@/components/report/AISummaryCard";
-import { formatDate, riskLevelColor, scoreColor } from "@/lib/utils";
+import { formatDate, riskLevelColor } from "@/lib/utils";
 import type { Report, ScanDetail } from "@/lib/types";
 
 function SeverityRow({ label, count, color }: { label: string; count: number; color: string }) {
@@ -21,17 +21,29 @@ function SeverityRow({ label, count, color }: { label: string; count: number; co
   );
 }
 
+// Map uppercase backend risk levels to badge variants
+function riskBadgeVariant(risk: string): "default" | "secondary" | "destructive" | "outline" {
+  switch (risk.toUpperCase()) {
+    case "SAFE":
+    case "LOW":    return "default";
+    case "MEDIUM": return "secondary";
+    default:       return "destructive";
+  }
+}
+
 export default function ReportDetailPage({ params }: { params: { id: string } }) {
   const { token } = useAuth();
 
+  // params.id is the SCAN id — the backend route is GET /reports/{scan_id}
   const { data: report, isLoading: loadingReport } = useSWR<Report>(
-    token ? `report-${params.id}` : null,
+    token ? `report-scan-${params.id}` : null,
     () => reportApi.get(token!, params.id)
   );
 
+  // Load the scan so we can show its name in the header
   const { data: scan } = useSWR<ScanDetail>(
-    token && report ? `scan-${report.scan_id}` : null,
-    () => scanApi.get(token!, report!.scan_id)
+    token ? `scan-${params.id}` : null,
+    () => scanApi.get(token!, params.id)
   );
 
   if (loadingReport) {
@@ -64,9 +76,11 @@ export default function ReportDetailPage({ params }: { params: { id: string } })
           ← All reports
         </Link>
         <h2 className="text-xl font-semibold mt-1">
-          {scan?.project_name ?? "Security Report"}
+          {/* API: scan.name, not scan.project_name */}
+          {scan?.name ?? "Security Report"}
         </h2>
-        <p className="text-xs text-muted-foreground">{formatDate(report.created_at)}</p>
+        {/* API: report.generated_at, not report.created_at */}
+        <p className="text-xs text-muted-foreground">{formatDate(report.generated_at)}</p>
       </div>
 
       {/* Score + breakdown */}
@@ -82,13 +96,14 @@ export default function ReportDetailPage({ params }: { params: { id: string } })
             <CardTitle className="text-sm">Finding Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
-            <SeverityRow label="Critical" count={report.critical_count}     color="text-red-400" />
-            <SeverityRow label="High"     count={report.high_count}         color="text-orange-400" />
-            <SeverityRow label="Medium"   count={report.medium_count}       color="text-yellow-400" />
-            <SeverityRow label="Low"      count={report.low_count}          color="text-blue-400" />
+            <SeverityRow label="Critical" count={report.critical_count} color="text-red-400" />
+            <SeverityRow label="High"     count={report.high_count}     color="text-orange-400" />
+            <SeverityRow label="Medium"   count={report.medium_count}   color="text-yellow-400" />
+            <SeverityRow label="Low"      count={report.low_count}      color="text-blue-400" />
             <div className="mt-3 pt-3 border-t border-border flex justify-between text-xs text-muted-foreground">
-              <span>Total findings</span>
-              <span className="font-bold text-foreground">{report.total_findings}</span>
+              <span>Total security issues</span>
+              {/* API: total_security_issues */}
+              <span className="font-bold text-foreground">{report.total_security_issues}</span>
             </div>
           </CardContent>
         </Card>
@@ -99,17 +114,13 @@ export default function ReportDetailPage({ params }: { params: { id: string } })
             <CardTitle className="text-sm">Dependency Risk</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="text-3xl font-bold">
-              {report.vulnerable_dependencies}
-              <span className="text-sm font-normal text-muted-foreground">
-                {" "}/ {report.total_dependencies}
-              </span>
-            </div>
+            {/* API: total_dep_issues */}
+            <div className="text-3xl font-bold">{report.total_dep_issues}</div>
             <p className="text-xs text-muted-foreground">vulnerable packages</p>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Dep. risk score</span>
-              <span className={`text-sm font-bold ${scoreColor(100 - report.dependency_risk_score)}`}>
-                {Math.round(report.dependency_risk_score)}
+              <span className="text-xs text-muted-foreground">Model used</span>
+              <span className="text-xs text-muted-foreground font-mono">
+                {report.model_used ?? "—"}
               </span>
             </div>
           </CardContent>
@@ -121,18 +132,15 @@ export default function ReportDetailPage({ params }: { params: { id: string } })
         <CardContent className="py-4 flex items-center gap-4">
           <div>
             <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-1">
-              Release recommendation
+              Risk level
             </p>
-            <p className="text-sm font-semibold">{report.release_recommendation}</p>
+            {/* API: risk_level is uppercase e.g. "SAFE", "HIGH" */}
+            <p className={`text-sm font-semibold ${riskLevelColor(report.risk_level)}`}>
+              {report.risk_level}
+            </p>
           </div>
-          <Badge
-            className="ml-auto"
-            variant={
-              report.risk_level === "low"      ? "default" :
-              report.risk_level === "medium"   ? "secondary" : "destructive"
-            }
-          >
-            {report.risk_level} risk
+          <Badge className="ml-auto" variant={riskBadgeVariant(report.risk_level)}>
+            {report.risk_level}
           </Badge>
         </CardContent>
       </Card>

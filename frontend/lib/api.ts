@@ -25,15 +25,22 @@ async function apiFetch<T>(
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
 
   if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try {
-      const body = await res.json();
-      detail = body.detail ?? detail;
-    } catch {
-      // ignore parse error
+  let detail = `HTTP ${res.status}`;
+  try {
+    const body = await res.json();
+
+    if (typeof body.detail === "string") {
+      detail = body.detail;
+    } else if (Array.isArray(body.detail)) {
+      detail = body.detail
+        .map((item: { msg?: string }) => item.msg ?? "Invalid request")
+        .join(", ");
     }
-    throw new Error(detail);
+  } catch {
+    // ignore parse error
   }
+  throw new Error(detail);
+}
 
   // 204 No Content
   if (res.status === 204) return undefined as T;
@@ -75,20 +82,11 @@ export const authApi = {
   },
 
   login(email: string, password: string) {
-    // FastAPI OAuth2 expects form-encoded body
-    const form = new URLSearchParams({ username: email, password });
-    return fetch(`${BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: form.toString(),
-    }).then(async (res) => {
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail ?? `HTTP ${res.status}`);
-      }
-      return res.json() as Promise<AuthTokens>;
-    });
-  },
+  return apiFetch<AuthTokens>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+},
 
   me(token: string) {
     return apiFetch<User>("/auth/me", { token });
@@ -99,7 +97,8 @@ export const authApi = {
 
 export const scanApi = {
   list(token: string) {
-    return apiFetch<Scan[]>("/scans", { token });
+    // Backend returns ScanListResponse: { items, total, page, limit }
+    return apiFetch<{ items: Scan[]; total: number; page: number; limit: number }>("/scans", { token });
   },
 
   get(token: string, scanId: string) {
@@ -107,11 +106,15 @@ export const scanApi = {
   },
 
   uploadFile(token: string, file: File, projectName: string) {
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("project_name", projectName);
-    return apiUpload<Scan>("/scans/upload", fd, token);
-  },
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("name", projectName);
+  return apiUpload<{
+    scan_id: string;
+    status: string;
+    poll_url: string;
+  }>("/scans/upload", fd, token);
+},
 
   scanGithub(token: string, githubUrl: string, branch: string, projectName: string) {
     return apiFetch<Scan>("/scans/github", {
@@ -127,18 +130,18 @@ export const scanApi = {
 };
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
+// Backend routes: GET /reports/{scan_id}  (keyed on SCAN id, not report id)
+//                 GET /reports/{scan_id}/findings
 
 export const reportApi = {
-  list(token: string) {
-    return apiFetch<Report[]>("/reports", { token });
+  // Fetch report by the scan's UUID (backend key)
+  getByScanId(token: string, scanId: string) {
+    return apiFetch<Report>(`/reports/${scanId}`, { token });
   },
 
-  get(token: string, reportId: string) {
-    return apiFetch<Report>(`/reports/${reportId}`, { token });
-  },
-
-  getByScan(token: string, scanId: string) {
-    return apiFetch<Report>(`/reports/scan/${scanId}`, { token });
+  // Convenience alias kept for call sites that already have the scan_id
+  get(token: string, scanId: string) {
+    return apiFetch<Report>(`/reports/${scanId}`, { token });
   },
 };
 

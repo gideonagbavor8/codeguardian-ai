@@ -2,23 +2,30 @@
 
 import useSWR from "swr";
 import Link from "next/link";
-import { reportApi } from "@/lib/api";
+import { scanApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { formatDate, scoreColor, riskLevelColor } from "@/lib/utils";
-import type { Report } from "@/lib/types";
+import { formatDate } from "@/lib/utils";
+import type { Scan } from "@/lib/types";
 
 export default function ReportsListPage() {
   const { token } = useAuth();
 
-  const { data: reports, isLoading } = useSWR<Report[]>(
-    token ? "reports-list" : null,
-    () => reportApi.list(token!)
+  // Backend has no GET /reports list endpoint.
+  // Reports are fetched individually via GET /reports/{scan_id}.
+  // Here we list COMPLETE scans — each links to /reports/{scan.id}.
+  const { data, isLoading } = useSWR(
+    token ? "scans-complete" : null,
+    () => scanApi.list(token!)
+  );
+
+  const completedScans: Scan[] = (data?.items ?? []).filter(
+    (s) => s.status === "COMPLETE"
   );
 
   return (
@@ -30,7 +37,7 @@ export default function ReportsListPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">All Reports</CardTitle>
+          <CardTitle className="text-base">Completed Scans</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -39,9 +46,9 @@ export default function ReportsListPage() {
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : !reports?.length ? (
+          ) : completedScans.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
-              No reports yet.{" "}
+              No completed scans yet.{" "}
               <Link href="/scan/new" className="text-primary hover:underline">
                 Run a scan →
               </Link>
@@ -50,42 +57,31 @@ export default function ReportsListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Report ID</TableHead>
-                  <TableHead>Score</TableHead>
-                  <TableHead>Risk</TableHead>
-                  <TableHead>Findings</TableHead>
-                  <TableHead>Dep. Vulns</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Completed</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {reports.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {r.id.slice(0, 8)}…
-                    </TableCell>
+                {completedScans.map((s) => (
+                  <TableRow key={s.id}>
+                    <TableCell className="font-medium text-sm">{s.name ?? "—"}</TableCell>
                     <TableCell>
-                      <span className={`font-bold ${scoreColor(r.overall_score)}`}>
-                        {Math.round(r.overall_score)}
-                      </span>
+                      <Badge variant="outline" className="text-xs uppercase">
+                        {s.source_type}
+                      </Badge>
                     </TableCell>
-                    <TableCell>
-                      <span className={`text-xs font-semibold uppercase ${riskLevelColor(r.risk_level)}`}>
-                        {r.risk_level}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-sm">{r.total_findings}</TableCell>
-                    <TableCell className="text-sm">{r.vulnerable_dependencies}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(r.created_at)}
+                      {s.completed_at ? formatDate(s.completed_at) : formatDate(s.created_at)}
                     </TableCell>
                     <TableCell className="text-right">
+                      {/* Route uses scan id — backend: GET /reports/{scan_id} */}
                       <Link
-                        href={`/reports/${r.id}`}
+                        href={`/reports/${s.id}`}
                         className="text-xs text-primary hover:underline"
                       >
-                        View →
+                        View report →
                       </Link>
                     </TableCell>
                   </TableRow>

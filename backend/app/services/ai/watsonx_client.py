@@ -119,6 +119,14 @@ def _call_watsonx_sync(prompt: str) -> str:
         from ibm_watsonx_ai import APIClient, Credentials
         from ibm_watsonx_ai.foundation_models import ModelInference
         from ibm_watsonx_ai.metanames import GenTextParamsMetaNames as GenParams
+        # CannotSetProjectOrSpace is raised when the project_id cannot be validated
+        # (e.g. watsonx.ai service not provisioned, account 404, wrong region).
+        # Import it explicitly so auth failures are always classified correctly
+        # even if the error message format changes in future SDK versions.
+        try:
+            from ibm_watsonx_ai.wml_client_error import CannotSetProjectOrSpace as _CannotSetProjectOrSpace
+        except ImportError:
+            _CannotSetProjectOrSpace = None  # type: ignore[assignment,misc]
     except ImportError as exc:
         raise _WatsonxImportError(str(exc)) from exc
 
@@ -140,13 +148,22 @@ def _call_watsonx_sync(prompt: str) -> str:
             },
         )
 
-        response: dict[str, Any] = model.generate(prompt=prompt)
-        raw_text: str = response.get("results", [{}])[0].get("generated_text", "")
+        # generate_text() returns the generated string directly (recommended v1.x API).
+        # Falls back to the generate() dict extraction if generate_text is unavailable.
+        if hasattr(model, "generate_text"):
+            raw_text: str = model.generate_text(prompt=prompt)
+        else:
+            response: dict[str, Any] = model.generate(prompt=prompt)
+            raw_text = response.get("results", [{}])[0].get("generated_text", "")
         return raw_text
 
     except Exception as exc:
+        # Classify CannotSetProjectOrSpace (project_id 401/404) as an auth error
+        # both by its type (explicit) and by keywords in the message (fallback).
+        if _CannotSetProjectOrSpace is not None and isinstance(exc, _CannotSetProjectOrSpace):
+            raise _WatsonxAuthError(str(exc)) from exc
         exc_str = str(exc).lower()
-        # Surface auth errors distinctly so they can be logged more helpfully
-        if any(k in exc_str for k in ("401", "403", "unauthorized", "forbidden", "api key")):
+        if any(k in exc_str for k in ("401", "403", "unauthorized", "forbidden", "api key",
+                                       "cannotsetproject", "cannot set project")):
             raise _WatsonxAuthError(str(exc)) from exc
         raise _WatsonxAPIError(str(exc)) from exc

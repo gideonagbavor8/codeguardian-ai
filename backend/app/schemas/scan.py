@@ -8,6 +8,9 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from app.schemas.finding import SecurityFindingOut, DependencyFindingOut
+from app.schemas.report import ReportResponse
+
 from pydantic import BaseModel, Field
 
 
@@ -35,8 +38,8 @@ class ScanCreatedResponse(BaseModel):
 
 
 class ScanStatusResponse(BaseModel):
-    """Lightweight polling payload."""
-    scan_id: uuid.UUID
+    """Lightweight polling payload — field names match Scan model columns."""
+    id: uuid.UUID          # model column is `id`, not `scan_id`
     status: str
     completed_at: datetime | None
 
@@ -44,7 +47,7 @@ class ScanStatusResponse(BaseModel):
 
 
 class ScanResponse(BaseModel):
-    """Full scan record."""
+    """Full scan record with findings and report."""
     id: uuid.UUID
     name: str | None
     status: str
@@ -55,8 +58,14 @@ class ScanResponse(BaseModel):
     completed_at: datetime | None
     error_message: str | None
 
+    security_findings: list["SecurityFindingOut"] = []
+    dependency_findings: list["DependencyFindingOut"] = []
+    report: "ReportResponse | None" = None
+
     model_config = {"from_attributes": True}
 
+class ScanDetailResponse(ScanResponse):
+    """Full scan details including findings and report — inherits all typed fields from ScanResponse."""
 
 class ScanListResponse(BaseModel):
     items: list[ScanResponse]

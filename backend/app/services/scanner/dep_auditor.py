@@ -12,7 +12,11 @@ import os
 import tempfile
 from typing import List
 
-from app.services.scanner.base import RawDependencyFinding, normalise_severity
+from app.services.scanner.base import (
+    RawDependencyFinding,
+    normalise_severity,
+    run_subprocess_in_thread,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,16 +69,25 @@ async def _audit_pip(requirements_txt: str) -> List[RawDependencyFinding]:
         tmp.write(requirements_txt)
         tmp_path = tmp.name
 
+    argv = [
+        "pip-audit",
+        "--format", "json",
+        "--progress-spinner", "off",
+        "-r", tmp_path,
+    ]
+
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "pip-audit",
-            "--format", "json",
-            "--progress-spinner", "off",
-            "-r", tmp_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        except NotImplementedError:
+            # Event loop without asyncio subprocess support (Windows
+            # SelectorEventLoop) — run pip-audit in a worker thread instead.
+            stdout, stderr = await run_subprocess_in_thread(argv, timeout=120)
 
         raw_text = stdout.decode("utf-8", errors="replace").strip()
         if not raw_text:
@@ -125,23 +138,36 @@ async def _audit_npm(package_json: str) -> List[RawDependencyFinding]:
         with open(pkg_path, "w", encoding="utf-8") as f:
             f.write(package_json)
 
+        install_argv = ["npm", "install", "--package-lock-only", "--ignore-scripts"]
+        audit_argv = ["npm", "audit", "--json"]
+
         try:
             # Generate package-lock.json first (required by npm audit)
-            install_proc = await asyncio.create_subprocess_exec(
-                "npm", "install", "--package-lock-only", "--ignore-scripts",
-                cwd=tmp_dir,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            await asyncio.wait_for(install_proc.wait(), timeout=60)
+            try:
+                install_proc = await asyncio.create_subprocess_exec(
+                    *install_argv,
+                    cwd=tmp_dir,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(install_proc.wait(), timeout=60)
 
-            proc = await asyncio.create_subprocess_exec(
-                "npm", "audit", "--json",
-                cwd=tmp_dir,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+                proc = await asyncio.create_subprocess_exec(
+                    *audit_argv,
+                    cwd=tmp_dir,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+            except NotImplementedError:
+                # Event loop without asyncio subprocess support (Windows
+                # SelectorEventLoop) — run npm in a worker thread instead.
+                await run_subprocess_in_thread(
+                    install_argv, timeout=60, cwd=tmp_dir, capture=False
+                )
+                stdout, stderr = await run_subprocess_in_thread(
+                    audit_argv, timeout=120, cwd=tmp_dir
+                )
 
             raw_text = stdout.decode("utf-8", errors="replace").strip()
             if not raw_text:

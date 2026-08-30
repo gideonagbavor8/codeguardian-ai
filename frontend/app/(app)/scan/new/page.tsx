@@ -36,8 +36,8 @@ export default function NewScanPage() {
     setLoading(true);
     try {
       const scan = await scanApi.uploadFile(token, file, projectName || file.name);
-      toast({ title: "Scan started", description: `Scanning ${scan.project_name}…` });
-      router.push(`/scan/${scan.id}`);
+      toast({ title: "Scan started", description: `Scanning ${projectName || file.name}…` });
+      router.push(`/scan/${scan.scan_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {

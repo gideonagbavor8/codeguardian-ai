@@ -10,11 +10,14 @@ DELETE /scans/{id}   — delete scan
 from __future__ import annotations
 
 import asyncio
+import io
 import uuid
+import zipfile
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from app.database import AsyncSessionLocal
 from app.dependencies import CurrentUser, DBDep
@@ -25,6 +28,7 @@ from app.schemas.scan import (
     ScanResponse,
     ScanStatusResponse,
     SnippetScanRequest,
+    ScanDetailResponse,
 )
 from app.tasks.scan_pipeline import run_scan_pipeline
 
@@ -96,13 +100,94 @@ async def create_upload_scan(
     dep_file: Annotated[UploadFile | None, File()] = None,
     dep_ecosystem: Annotated[str, Form()] = "pip",
 ) -> ScanCreatedResponse:
-    raw_bytes = await file.read()
-    code = raw_bytes.decode("utf-8", errors="replace")
 
-    dep_content = ""
-    if dep_file:
-        dep_bytes = await dep_file.read()
-        dep_content = dep_bytes.decode("utf-8", errors="replace")
+    raw_bytes = await file.read()
+
+    # ZIP project upload
+    if file.filename and file.filename.lower().endswith(".zip"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw_bytes)) as z:
+                source_parts: list[str] = []
+                dependency_content = ""
+
+                allowed_extensions = {
+                    ".py", ".js", ".jsx", ".ts", ".tsx",
+                    ".java", ".go", ".rb", ".php",
+                    ".c", ".cpp", ".h", ".hpp",
+                }
+
+                for info in z.infolist():
+                    if info.is_dir():
+                        continue
+
+                    filename = info.filename
+                    lower_name = filename.lower()
+
+                    # Ignore common generated/dependency directories
+                    if any(
+                        part in lower_name.split("/")
+                        for part in [
+                            "node_modules",
+                            ".git",
+                            "__pycache__",
+                            ".venv",
+                            "venv",
+                            "dist",
+                            "build",
+                        ]
+                    ):
+                        continue
+
+                    try:
+                        content = z.read(info).decode(
+                            "utf-8",
+                            errors="replace",
+                        )
+                    except Exception:
+                        continue
+
+                    extension = ""
+                    if "." in filename:
+                        extension = "." + filename.rsplit(".", 1)[1].lower()
+
+                    if extension in allowed_extensions:
+                        source_parts.append(
+                            f"\n# ===== FILE: {filename} =====\n{content}"
+                        )
+
+                    # Python dependencies
+                    if lower_name.endswith("requirements.txt"):
+                        dependency_content = content
+
+                    # Node dependencies
+                    elif lower_name.endswith("package.json"):
+                        dependency_content = content
+                        dep_ecosystem = "npm"
+
+                code = "\n".join(source_parts)
+
+                if not code.strip():
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="No supported source-code files were found in the ZIP.",
+                    )
+
+                dep_content = dependency_content
+
+        except zipfile.BadZipFile:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The uploaded file is not a valid ZIP archive.",
+            )
+
+    # Single source file upload
+    else:
+        code = raw_bytes.decode("utf-8", errors="replace")
+        dep_content = ""
+
+        if dep_file:
+            dep_bytes = await dep_file.read()
+            dep_content = dep_bytes.decode("utf-8", errors="replace")
 
     scan = Scan(
         user_id=current_user.id,
@@ -118,6 +203,7 @@ async def create_upload_scan(
             "dep_ecosystem": dep_ecosystem,
         },
     )
+
     db.add(scan)
     await db.flush()
     scan_id = scan.id
@@ -191,21 +277,27 @@ async def get_scan_status(
 
 @router.get(
     "/{scan_id}",
-    response_model=ScanResponse,
+    response_model=ScanDetailResponse,
     summary="Get full scan details",
 )
-async def get_scan(
+async def get_scan_detail(
     scan_id: uuid.UUID,
     current_user: CurrentUser,
     db: DBDep,
-) -> ScanResponse:
+) -> ScanDetailResponse:
     result = await db.execute(
-        select(Scan).where(Scan.id == scan_id, Scan.user_id == current_user.id)
+        select(Scan)
+        .options(
+            selectinload(Scan.security_findings),
+            selectinload(Scan.dependency_findings),
+            selectinload(Scan.report),
+        )
+        .where(Scan.id == scan_id, Scan.user_id == current_user.id)
     )
     scan = result.scalar_one_or_none()
     if scan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
-    return ScanResponse.model_validate(scan)
+    return ScanDetailResponse.model_validate(scan)
 
 
 @router.delete(

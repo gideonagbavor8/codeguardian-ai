@@ -18,7 +18,7 @@ export function useScanStatus(scanId: string) {
       try {
         const data = await scanApi.get(token, scanId);
         setScan(data);
-        if (data.status === "completed" || data.status === "failed") {
+        if (data.status === "COMPLETE" || data.status === "FAILED") {
           if (intervalRef.current) clearInterval(intervalRef.current);
         }
       } catch (e) {

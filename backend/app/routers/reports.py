@@ -17,11 +17,7 @@ from app.models.report import Report
 from app.models.scan import Scan
 from app.models.finding import SecurityFinding, DependencyFinding
 from app.schemas.finding import DependencyFindingOut, SecurityFindingOut
-from app.schemas.report import (
-    CountsSummary,
-    FindingsSummary,
-    ReportResponse,
-)
+from app.schemas.report import ReportResponse
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -61,31 +57,6 @@ async def get_report(
 ) -> ReportResponse:
     _scan, report = await _get_scan_and_report(scan_id, current_user.id, db)
 
-    # Load findings
-    sec_result = await db.execute(
-        select(SecurityFinding).where(SecurityFinding.scan_id == scan_id)
-    )
-    sec_findings = sec_result.scalars().all()
-
-    dep_result = await db.execute(
-        select(DependencyFinding).where(DependencyFinding.scan_id == scan_id)
-    )
-    dep_findings = dep_result.scalars().all()
-
-    # Enrich security findings with AI fix suggestions
-    fix_map: dict[int, str] = {}
-    if report.ai_fix_suggestions:
-        for item in report.ai_fix_suggestions:
-            fix_map[item.get("index", -1)] = item.get("suggestion", "")
-
-    sec_out = []
-    for i, f in enumerate(sec_findings):
-        out = SecurityFindingOut.model_validate(f)
-        out.ai_fix = fix_map.get(i)
-        sec_out.append(out)
-
-    dep_out = [DependencyFindingOut.model_validate(d) for d in dep_findings]
-
     return ReportResponse(
         id=report.id,
         scan_id=report.scan_id,
@@ -95,15 +66,12 @@ async def get_report(
         ai_fix_suggestions=report.ai_fix_suggestions,
         ai_review_narrative=report.ai_review_narrative,
         model_used=report.model_used,
-        findings=FindingsSummary(security=sec_out, dependencies=dep_out),
-        counts=CountsSummary(
-            critical=report.critical_count,
-            high=report.high_count,
-            medium=report.medium_count,
-            low=report.low_count,
-            total_security=report.total_security_issues,
-            total_dependencies=report.total_dep_issues,
-        ),
+        total_security_issues=report.total_security_issues,
+        critical_count=report.critical_count,
+        high_count=report.high_count,
+        medium_count=report.medium_count,
+        low_count=report.low_count,
+        total_dep_issues=report.total_dep_issues,
         generated_at=report.generated_at,
     )
 

@@ -11,7 +11,11 @@ import os
 import tempfile
 from typing import List
 
-from app.services.scanner.base import RawSecurityFinding, normalise_severity
+from app.services.scanner.base import (
+    RawSecurityFinding,
+    normalise_severity,
+    run_subprocess_in_thread,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +37,20 @@ async def run_bandit(code: str, language: str = "python") -> List[RawSecurityFin
         tmp.write(code)
         tmp_path = tmp.name
 
+    argv = ["bandit", "-f", "json", "-q", "--exit-zero", tmp_path]
+
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "bandit", "-f", "json", "-q", "--exit-zero", tmp_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+        except NotImplementedError:
+            # Event loop without asyncio subprocess support (Windows
+            # SelectorEventLoop) — run bandit in a worker thread instead.
+            stdout, stderr = await run_subprocess_in_thread(argv, timeout=60)
 
         raw_text = stdout.decode("utf-8", errors="replace").strip()
         if not raw_text:

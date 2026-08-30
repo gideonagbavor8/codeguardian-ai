@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { formatDate, scoreColor } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -9,11 +9,12 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Scan, ScanStatus } from "@/lib/types";
 
+// Backend uses uppercase status values
 const statusVariant: Record<ScanStatus, "default" | "secondary" | "destructive" | "outline"> = {
-  completed: "default",
-  running:   "secondary",
-  pending:   "outline",
-  failed:    "destructive",
+  COMPLETE: "default",
+  RUNNING:  "secondary",
+  PENDING:  "outline",
+  FAILED:   "destructive",
 };
 
 interface RecentScansTableProps {
@@ -57,11 +58,13 @@ export function RecentScansTable({ scans, loading }: RecentScansTableProps) {
       <TableBody>
         {scans.map((scan) => (
           <TableRow key={scan.id}>
-            <TableCell className="font-medium">{scan.project_name}</TableCell>
+            {/* API: `name`, not `project_name` */}
+            <TableCell className="font-medium">{scan.name ?? "—"}</TableCell>
             <TableCell>
               <Badge variant={statusVariant[scan.status]}>{scan.status}</Badge>
             </TableCell>
-            <TableCell className="text-muted-foreground text-xs uppercase">{scan.scan_type}</TableCell>
+            {/* API: `source_type`, not `scan_type` */}
+            <TableCell className="text-muted-foreground text-xs uppercase">{scan.source_type}</TableCell>
             <TableCell className="text-muted-foreground text-xs">{formatDate(scan.created_at)}</TableCell>
             <TableCell className="text-right">
               <Link

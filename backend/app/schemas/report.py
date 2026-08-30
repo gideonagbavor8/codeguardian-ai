@@ -10,23 +10,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.schemas.finding import DependencyFindingOut, SecurityFindingOut
-
-
-class FindingsSummary(BaseModel):
-    security: list[SecurityFindingOut]
-    dependencies: list[DependencyFindingOut]
-
-
-class CountsSummary(BaseModel):
-    critical: int
-    high: int
-    medium: int
-    low: int
-    total_security: int
-    total_dependencies: int
-
-
 class ReportResponse(BaseModel):
     id: uuid.UUID
     scan_id: uuid.UUID
@@ -36,8 +19,13 @@ class ReportResponse(BaseModel):
     ai_fix_suggestions: list[dict[str, Any]] | None
     ai_review_narrative: str | None
     model_used: str | None
-    findings: FindingsSummary
-    counts: CountsSummary
+    # Flat counts — map directly to Report model columns
+    total_security_issues: int
+    critical_count: int
+    high_count: int
+    medium_count: int
+    low_count: int
+    total_dep_issues: int
     generated_at: datetime
 
     model_config = {"from_attributes": True}
@@ -49,8 +37,8 @@ class DashboardStats(BaseModel):
     total_scans: int
     completed_scans: int
     average_score: float | None
-    critical_issues_total: int
-    high_issues_total: int
+    critical_findings: int
+    recent_scans: list[dict]
 
 
 class TrendPoint(BaseModel):
