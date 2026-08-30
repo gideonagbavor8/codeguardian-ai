@@ -7,6 +7,7 @@ All tests use mocked responses — no real API key is required.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from unittest.mock import MagicMock, patch
 
@@ -60,6 +61,57 @@ VALID_AI_JSON = json.dumps({
     ],
     "narrative": "Two issues found; remediate before production deployment.",
 })
+
+
+# ── watsonx SDK mocking ───────────────────────────────────────
+
+class FakeCannotSetProjectOrSpace(Exception):
+    """Stand-in for ibm_watsonx_ai.wml_client_error.CannotSetProjectOrSpace."""
+
+
+@contextlib.contextmanager
+def mock_watsonx_sdk(mock_model: MagicMock):
+    """
+    Replace every ibm_watsonx_ai module that _call_watsonx_sync imports with a
+    mock, and hand it *mock_model* as the ModelInference instance.
+
+    Credentials() and APIClient() are mocks returning mocks, so no real SDK
+    object is ever constructed and no network call can be attempted.  The
+    wml_client_error submodule is mocked too — without it the real one is
+    imported (or the import fails and the typed CannotSetProjectOrSpace check
+    is silently skipped), which is exactly the accidental real-SDK behaviour
+    these tests must avoid.  settings are stubbed so no real credentials leak
+    into the mock call args.
+    """
+    mock_pkg = MagicMock(name="ibm_watsonx_ai")
+    mock_pkg.Credentials = MagicMock(name="Credentials", return_value=MagicMock(name="credentials"))
+    mock_pkg.APIClient = MagicMock(name="APIClient", return_value=MagicMock(name="api_client"))
+
+    mock_fm = MagicMock(name="ibm_watsonx_ai.foundation_models")
+    mock_fm.ModelInference = MagicMock(name="ModelInference", return_value=mock_model)
+
+    mock_meta = MagicMock(name="ibm_watsonx_ai.metanames")
+    mock_meta.GenTextParamsMetaNames.MAX_NEW_TOKENS = "max_new_tokens"
+    mock_meta.GenTextParamsMetaNames.TEMPERATURE = "temperature"
+    mock_meta.GenTextParamsMetaNames.STOP_SEQUENCES = "stop_sequences"
+
+    mock_errors = MagicMock(name="ibm_watsonx_ai.wml_client_error")
+    mock_errors.CannotSetProjectOrSpace = FakeCannotSetProjectOrSpace
+
+    sdk_modules = {
+        "ibm_watsonx_ai": mock_pkg,
+        "ibm_watsonx_ai.foundation_models": mock_fm,
+        "ibm_watsonx_ai.metanames": mock_meta,
+        "ibm_watsonx_ai.wml_client_error": mock_errors,
+    }
+
+    with patch.dict("sys.modules", sdk_modules):
+        with patch("app.services.ai.watsonx_client.settings") as s:
+            s.WATSONX_URL = "https://us-south.ml.cloud.ibm.com"
+            s.WATSONX_API_KEY = "key"
+            s.WATSONX_PROJECT_ID = "proj"
+            s.WATSONX_MODEL_ID = "ibm/granite-13b-instruct-v2"
+            yield mock_fm
 
 
 # ═════════════════════════════════════════════════════════════
@@ -328,7 +380,9 @@ async def test_generate_analysis_timeout_returns_placeholder():
 
     with patch("app.services.ai.watsonx_client.settings") as mock_settings, \
          patch("app.services.ai.watsonx_client.asyncio.wait_for",
-               side_effect=asyncio.TimeoutError()):
+               side_effect=asyncio.TimeoutError()), \
+         patch("app.services.ai.watsonx_client._call_watsonx_sync",
+               return_value=""):
         mock_settings.WATSONX_API_KEY = "key"
         mock_settings.WATSONX_PROJECT_ID = "proj"
         result = await generate_analysis([_sec()], [])
@@ -344,7 +398,9 @@ async def test_generate_analysis_import_error_returns_placeholder():
 
     with patch("app.services.ai.watsonx_client.settings") as mock_settings, \
          patch("app.services.ai.watsonx_client.asyncio.wait_for",
-               side_effect=_WatsonxImportError("No module named ibm_watsonx_ai")):
+               side_effect=_WatsonxImportError("No module named ibm_watsonx_ai")), \
+         patch("app.services.ai.watsonx_client._call_watsonx_sync",
+               return_value=""):
         mock_settings.WATSONX_API_KEY = "key"
         mock_settings.WATSONX_PROJECT_ID = "proj"
         result = await generate_analysis([_sec()], [])
@@ -359,7 +415,9 @@ async def test_generate_analysis_auth_error_returns_placeholder():
 
     with patch("app.services.ai.watsonx_client.settings") as mock_settings, \
          patch("app.services.ai.watsonx_client.asyncio.wait_for",
-               side_effect=_WatsonxAuthError("401 Unauthorized")):
+               side_effect=_WatsonxAuthError("401 Unauthorized")), \
+         patch("app.services.ai.watsonx_client._call_watsonx_sync",
+               return_value=""):
         mock_settings.WATSONX_API_KEY = "bad-key"
         mock_settings.WATSONX_PROJECT_ID = "proj"
         result = await generate_analysis([_sec()], [])
@@ -374,7 +432,9 @@ async def test_generate_analysis_api_error_returns_placeholder():
 
     with patch("app.services.ai.watsonx_client.settings") as mock_settings, \
          patch("app.services.ai.watsonx_client.asyncio.wait_for",
-               side_effect=_WatsonxAPIError("500 Internal Server Error")):
+               side_effect=_WatsonxAPIError("500 Internal Server Error")), \
+         patch("app.services.ai.watsonx_client._call_watsonx_sync",
+               return_value=""):
         mock_settings.WATSONX_API_KEY = "key"
         mock_settings.WATSONX_PROJECT_ID = "proj"
         result = await generate_analysis([_sec()], [])
@@ -454,104 +514,69 @@ class TestCallWatsonxSync:
                 _call_watsonx_sync("test prompt")
 
     def test_raises_auth_error_for_401(self):
+        """A 401 from generate_text() is classified as an auth error."""
         from app.services.ai.watsonx_client import _WatsonxAuthError, _call_watsonx_sync
 
-        # Mock the SDK classes inside the function scope
         mock_model = MagicMock()
-        mock_model.generate.side_effect = Exception("401 Unauthorized — invalid api key")
+        mock_model.generate_text.side_effect = Exception("401 Unauthorized - invalid api key")
 
-        with patch.dict("sys.modules", {
-            "ibm_watsonx_ai": MagicMock(),
-            "ibm_watsonx_ai.foundation_models": MagicMock(),
-            "ibm_watsonx_ai.metanames": MagicMock(),
-        }):
-            import sys
-            mock_pkg = sys.modules["ibm_watsonx_ai"]
-            mock_pkg.Credentials.return_value = MagicMock()
-            mock_pkg.APIClient.return_value = MagicMock()
+        with mock_watsonx_sdk(mock_model):
+            with pytest.raises(_WatsonxAuthError):
+                _call_watsonx_sync("prompt")
 
-            mock_fm = sys.modules["ibm_watsonx_ai.foundation_models"]
-            mock_fm.ModelInference.return_value = mock_model
+        mock_model.generate_text.assert_called_once_with(prompt="prompt")
 
-            mock_meta = sys.modules["ibm_watsonx_ai.metanames"]
-            mock_meta.GenTextParamsMetaNames.MAX_NEW_TOKENS = "max_new_tokens"
-            mock_meta.GenTextParamsMetaNames.TEMPERATURE = "temperature"
-            mock_meta.GenTextParamsMetaNames.STOP_SEQUENCES = "stop_sequences"
+    def test_raises_auth_error_for_cannot_set_project_or_space(self):
+        """CannotSetProjectOrSpace is classified as auth by type, not by message."""
+        from app.services.ai.watsonx_client import _WatsonxAuthError, _call_watsonx_sync
 
-            with patch("app.services.ai.watsonx_client.settings") as s:
-                s.WATSONX_URL = "https://us-south.ml.cloud.ibm.com"
-                s.WATSONX_API_KEY = "key"
-                s.WATSONX_PROJECT_ID = "proj"
-                s.WATSONX_MODEL_ID = "ibm/granite-13b-instruct-v2"
+        mock_model = MagicMock()
+        # Message carries none of the keyword fallbacks - only the type identifies it.
+        mock_model.generate_text.side_effect = FakeCannotSetProjectOrSpace(
+            "Failed to retrieve user info."
+        )
 
-                with pytest.raises(_WatsonxAuthError):
-                    _call_watsonx_sync("prompt")
+        with mock_watsonx_sdk(mock_model):
+            with pytest.raises(_WatsonxAuthError):
+                _call_watsonx_sync("prompt")
 
     def test_raises_api_error_for_generic_exception(self):
+        """A non-auth failure is classified as an API error."""
         from app.services.ai.watsonx_client import _WatsonxAPIError, _call_watsonx_sync
 
         mock_model = MagicMock()
-        mock_model.generate.side_effect = Exception("500 Internal Server Error")
+        mock_model.generate_text.side_effect = Exception("500 Internal Server Error")
 
-        with patch.dict("sys.modules", {
-            "ibm_watsonx_ai": MagicMock(),
-            "ibm_watsonx_ai.foundation_models": MagicMock(),
-            "ibm_watsonx_ai.metanames": MagicMock(),
-        }):
-            import sys
-            mock_pkg = sys.modules["ibm_watsonx_ai"]
-            mock_pkg.Credentials.return_value = MagicMock()
-            mock_pkg.APIClient.return_value = MagicMock()
-
-            mock_fm = sys.modules["ibm_watsonx_ai.foundation_models"]
-            mock_fm.ModelInference.return_value = mock_model
-
-            mock_meta = sys.modules["ibm_watsonx_ai.metanames"]
-            mock_meta.GenTextParamsMetaNames.MAX_NEW_TOKENS = "max_new_tokens"
-            mock_meta.GenTextParamsMetaNames.TEMPERATURE = "temperature"
-            mock_meta.GenTextParamsMetaNames.STOP_SEQUENCES = "stop_sequences"
-
-            with patch("app.services.ai.watsonx_client.settings") as s:
-                s.WATSONX_URL = "https://us-south.ml.cloud.ibm.com"
-                s.WATSONX_API_KEY = "key"
-                s.WATSONX_PROJECT_ID = "proj"
-                s.WATSONX_MODEL_ID = "ibm/granite-13b-instruct-v2"
-
-                with pytest.raises(_WatsonxAPIError):
-                    _call_watsonx_sync("prompt")
+        with mock_watsonx_sdk(mock_model):
+            with pytest.raises(_WatsonxAPIError):
+                _call_watsonx_sync("prompt")
 
     def test_returns_generated_text_on_success(self):
+        """generate_text() returns the generated string directly."""
         from app.services.ai.watsonx_client import _call_watsonx_sync
 
         mock_model = MagicMock()
+        mock_model.generate_text.return_value = VALID_AI_JSON
+
+        with mock_watsonx_sdk(mock_model) as mock_fm:
+            result = _call_watsonx_sync("prompt")
+
+        assert result == VALID_AI_JSON
+        mock_model.generate_text.assert_called_once_with(prompt="prompt")
+        mock_fm.ModelInference.assert_called_once()
+
+    def test_falls_back_to_generate_when_generate_text_missing(self):
+        """Older SDKs without generate_text() use the generate() dict extraction."""
+        from app.services.ai.watsonx_client import _call_watsonx_sync
+
+        # spec omits generate_text, so hasattr(model, "generate_text") is False.
+        mock_model = MagicMock(spec=["generate"])
         mock_model.generate.return_value = {
             "results": [{"generated_text": VALID_AI_JSON}]
         }
 
-        with patch.dict("sys.modules", {
-            "ibm_watsonx_ai": MagicMock(),
-            "ibm_watsonx_ai.foundation_models": MagicMock(),
-            "ibm_watsonx_ai.metanames": MagicMock(),
-        }):
-            import sys
-            mock_pkg = sys.modules["ibm_watsonx_ai"]
-            mock_pkg.Credentials.return_value = MagicMock()
-            mock_pkg.APIClient.return_value = MagicMock()
-
-            mock_fm = sys.modules["ibm_watsonx_ai.foundation_models"]
-            mock_fm.ModelInference.return_value = mock_model
-
-            mock_meta = sys.modules["ibm_watsonx_ai.metanames"]
-            mock_meta.GenTextParamsMetaNames.MAX_NEW_TOKENS = "max_new_tokens"
-            mock_meta.GenTextParamsMetaNames.TEMPERATURE = "temperature"
-            mock_meta.GenTextParamsMetaNames.STOP_SEQUENCES = "stop_sequences"
-
-            with patch("app.services.ai.watsonx_client.settings") as s:
-                s.WATSONX_URL = "https://us-south.ml.cloud.ibm.com"
-                s.WATSONX_API_KEY = "key"
-                s.WATSONX_PROJECT_ID = "proj"
-                s.WATSONX_MODEL_ID = "ibm/granite-13b-instruct-v2"
-
-                result = _call_watsonx_sync("prompt")
+        with mock_watsonx_sdk(mock_model):
+            result = _call_watsonx_sync("prompt")
 
         assert result == VALID_AI_JSON
+        mock_model.generate.assert_called_once_with(prompt="prompt")
